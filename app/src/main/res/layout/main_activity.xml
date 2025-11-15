@@ -18,13 +18,21 @@
         android:paddingBottom="0dp"
         android:background="@android:color/black">
 
-        <com.termux.x11.LorieView
-            android:id="@+id/lorieView"
+        <ScrollView
+            android:id="@+id/scrolllorieView"
             android:layout_width="match_parent"
             android:layout_height="match_parent"
-            android:visibility="visible"
-            android:layout_gravity="center" />
+            android:layout_above="@+id/btnNext">
+            
+            <com.termux.x11.LorieView
+                android:id="@+id/lorieView"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:visibility="visible"
+                android:layout_gravity="center" />
 
+        </ScrollView>
+        
         <LinearLayout
             android:id="@+id/stub"
             android:layout_width="match_parent"
