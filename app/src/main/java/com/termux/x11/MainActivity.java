@@ -291,7 +291,7 @@ public class MainActivity extends AppCompatActivity {
                 switch (event.getAction()) {
                     case MotionEvent.ACTION_DOWN:
                         lastY = event.getRawY();
-                        return true; // Bắt đầu nhận sự kiện kéo
+                        return false; // Bắt đầu nhận sự kiện kéo
 
                     case MotionEvent.ACTION_MOVE:
                         float dy = event.getRawY() - lastY;
@@ -303,7 +303,7 @@ public class MainActivity extends AppCompatActivity {
                     case MotionEvent.ACTION_UP:
                     case MotionEvent.ACTION_CANCEL:
                         v.performClick();
-                        return true;
+                        return false;
                 }
                 return false;
             }
