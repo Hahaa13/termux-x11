@@ -97,6 +97,7 @@ public class MainActivity extends AppCompatActivity {
     private boolean isKeyboardOpen = false;
     private float lastY = 0f;
     private float totalTranslation = 0f;
+    private float currentKeypadHeight = 0f;
 
     public static Prefs prefs = null;
 
@@ -265,6 +266,8 @@ public class MainActivity extends AppCompatActivity {
                 int screenHeight = rootview.getRootView().getHeight();
                 int keypadHeight = screenHeight - rect.bottom;
 
+                currentKeypadHeight = (float) keypadHeight;
+
                 // Nếu phần bị che > 15% màn hình -> Bàn phím ĐANG MỞ
                 if (keypadHeight > screenHeight * 0.15) {
                     isKeyboardOpen = true;
@@ -392,8 +395,18 @@ public class MainActivity extends AppCompatActivity {
 
             case MotionEvent.ACTION_MOVE:
                 float dy = event.getRawY() - lastY;
+
+                if (Math.abs(dy) < 5f)
+                    break;
+
                 totalTranslation += dy;
-                v.setTranslationY(totalTranslation);
+
+                //Limit translation to keyboard height
+                float clampedTranslation = totalTranslation;
+                clampedTranslation = Math.min(clampedTranslation, currentKeypadHeight); 
+                clampedTranslation = Math.max(clampedTranslation, 0f);
+
+                v.setTranslationY(clampedTranslation);
                 lastY = event.getRawY();
                 break;
 
