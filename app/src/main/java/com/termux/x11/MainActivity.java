@@ -258,8 +258,8 @@ public class MainActivity extends AppCompatActivity {
             @Override
             public void onGlobalLayout() {
                 Rect rect = new Rect();
-                rootView.getWindowVisibleDisplayFrame(rect);
-                int screenHeight = rootView.getRootView().getHeight();
+                rootview.getWindowVisibleDisplayFrame(rect);
+                int screenHeight = rootview.getRootView().getHeight();
                 int keypadHeight = screenHeight - rect.bottom;
 
                 // Nếu phần bị che > 15% màn hình -> Bàn phím ĐANG MỞ
