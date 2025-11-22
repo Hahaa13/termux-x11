@@ -196,6 +196,8 @@ public class MainActivity extends AppCompatActivity {
             if (e.getAction() == MotionEvent.ACTION_DOWN)
                 lorieParent.requestUnbufferedDispatch(e);
 
+            onTouchScrollView(v, e);
+
             return mInputHandler.handleTouchEvent(lorieParent, lorieView, e);
         });
         lorieParent.setOnHoverListener((v, e) -> mInputHandler.handleTouchEvent(lorieParent, lorieView, e));
@@ -274,38 +276,6 @@ public class MainActivity extends AppCompatActivity {
                         resetPosition();
                     }
                 }
-            }
-        });
-
-        frm.setOnTouchListener(new View.OnTouchListener() {
-            @Override
-            public boolean onTouch(View v, MotionEvent event) {
-                
-                // --- ĐIỀU KIỆN QUAN TRỌNG NHẤT ---
-                // Nếu bàn phím KHÔNG mở, trả về false ngay lập tức.
-                // Điều này làm cho sự kiện chạm bị hủy, không kéo được.
-                if (!isKeyboardOpen) {
-                    return true;
-                }
-
-                switch (event.getAction()) {
-                    case MotionEvent.ACTION_DOWN:
-                        lastY = event.getRawY();
-                        return true; // Bắt đầu nhận sự kiện kéo
-
-                    case MotionEvent.ACTION_MOVE:
-                        float dy = event.getRawY() - lastY;
-                        totalTranslation += dy;
-                        v.setTranslationY(totalTranslation);
-                        lastY = event.getRawY();
-                        return true;
-
-                    case MotionEvent.ACTION_UP:
-                    case MotionEvent.ACTION_CANCEL:
-                        v.performClick();
-                        return true;
-                }
-                return false;
             }
         });
     }
@@ -408,6 +378,30 @@ public class MainActivity extends AppCompatActivity {
 
             return true;
         });
+    }
+
+    private void onTouchScrollView(View v, MotionEvent event) {   
+        if (!isKeyboardOpen) {
+            return;
+        }
+
+        switch (event.getAction()) {
+            case MotionEvent.ACTION_DOWN:
+                lastY = event.getRawY();
+                break;
+
+            case MotionEvent.ACTION_MOVE:
+                float dy = event.getRawY() - lastY;
+                totalTranslation += dy;
+                v.setTranslationY(totalTranslation);
+                lastY = event.getRawY();
+                break;
+
+            case MotionEvent.ACTION_UP:
+            case MotionEvent.ACTION_CANCEL:
+                v.performClick();
+                break;
+        }
     }
 
     private void resetPosition() {
