@@ -79,6 +79,7 @@ public class MainActivity extends AppCompatActivity {
 
     public static Handler handler = new Handler();
     FrameLayout frm;
+    View rootview;
     private TouchInputHandler mInputHandler;
     protected ICmdEntryInterface service = null;
     public TermuxX11ExtraKeys mExtraKeys;
@@ -92,6 +93,9 @@ public class MainActivity extends AppCompatActivity {
     private boolean filterOutWinKey = false;
     boolean useTermuxEKBarBehaviour = false;
     private boolean isInPictureInPictureMode = false;
+    private boolean isKeyboardOpen = false;
+    private float lastY = 0f;
+    private float totalTranslation = 0f;
 
     public static Prefs prefs = null;
 
@@ -247,7 +251,62 @@ public class MainActivity extends AppCompatActivity {
         }
 
         onReceiveConnection(getIntent());
-        findViewById(android.R.id.content).addOnLayoutChangeListener((v, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) -> makeSureHelpersAreVisibleAndInScreenBounds());
+
+        rootview = findViewById(android.R.id.content);
+        rootview.addOnLayoutChangeListener((v, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) -> makeSureHelpersAreVisibleAndInScreenBounds());
+        rootview.getViewTreeObserver().addOnGlobalLayoutListener(new ViewTreeObserver.OnGlobalLayoutListener() {
+            @Override
+            public void onGlobalLayout() {
+                Rect rect = new Rect();
+                rootView.getWindowVisibleDisplayFrame(rect);
+                int screenHeight = rootView.getRootView().getHeight();
+                int keypadHeight = screenHeight - rect.bottom;
+
+                // Nếu phần bị che > 15% màn hình -> Bàn phím ĐANG MỞ
+                if (keypadHeight > screenHeight * 0.15) {
+                    isKeyboardOpen = true;
+                } else {
+                    isKeyboardOpen = false;
+                    
+                    // Khi tắt bàn phím, tự động đưa view về vị trí cũ (nếu muốn)
+                    if (totalTranslation != 0) {
+                        resetPosition();
+                    }
+                }
+            }
+        });
+
+        frm.setOnTouchListener(new View.OnTouchListener() {
+            @Override
+            public boolean onTouch(View v, MotionEvent event) {
+                
+                // --- ĐIỀU KIỆN QUAN TRỌNG NHẤT ---
+                // Nếu bàn phím KHÔNG mở, trả về false ngay lập tức.
+                // Điều này làm cho sự kiện chạm bị hủy, không kéo được.
+                if (!isKeyboardOpen) {
+                    return false;
+                }
+
+                switch (event.getAction()) {
+                    case MotionEvent.ACTION_DOWN:
+                        lastY = event.getRawY();
+                        return true; // Bắt đầu nhận sự kiện kéo
+
+                    case MotionEvent.ACTION_MOVE:
+                        float dy = event.getRawY() - lastY;
+                        totalTranslation += dy;
+                        v.setTranslationY(totalTranslation);
+                        lastY = event.getRawY();
+                        return true;
+
+                    case MotionEvent.ACTION_UP:
+                    case MotionEvent.ACTION_CANCEL:
+                        v.performClick();
+                        return true;
+                }
+                return false;
+            }
+        });
     }
 
     @Override
@@ -348,6 +407,14 @@ public class MainActivity extends AppCompatActivity {
 
             return true;
         });
+    }
+
+    private void resetPosition() {
+        frm.animate()
+                .translationY(0f)
+                .setDuration(300)
+                .start();
+        totalTranslation = 0f;
     }
 
     private void showStylusAuxButtons(boolean show) {
