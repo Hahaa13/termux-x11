@@ -285,13 +285,13 @@ public class MainActivity extends AppCompatActivity {
                 // Nếu bàn phím KHÔNG mở, trả về false ngay lập tức.
                 // Điều này làm cho sự kiện chạm bị hủy, không kéo được.
                 if (!isKeyboardOpen) {
-                    return false;
+                    return true;
                 }
 
                 switch (event.getAction()) {
                     case MotionEvent.ACTION_DOWN:
                         lastY = event.getRawY();
-                        return false; // Bắt đầu nhận sự kiện kéo
+                        return true; // Bắt đầu nhận sự kiện kéo
 
                     case MotionEvent.ACTION_MOVE:
                         float dy = event.getRawY() - lastY;
@@ -303,7 +303,7 @@ public class MainActivity extends AppCompatActivity {
                     case MotionEvent.ACTION_UP:
                     case MotionEvent.ACTION_CANCEL:
                         v.performClick();
-                        return false;
+                        return true;
                 }
                 return false;
             }
