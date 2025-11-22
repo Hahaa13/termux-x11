@@ -396,15 +396,15 @@ public class MainActivity extends AppCompatActivity {
             case MotionEvent.ACTION_MOVE:
                 float dy = event.getRawY() - lastY;
 
-                if (Math.abs(dy) < 5f)
+                if (Math.abs(dy) < 3f)
                     break;
 
                 totalTranslation += dy;
 
                 //Limit translation to keyboard height
                 float clampedTranslation = totalTranslation;
-                clampedTranslation = Math.min(clampedTranslation, currentKeypadHeight); 
-                clampedTranslation = Math.max(clampedTranslation, 0f);
+                clampedTranslation = Math.min(clampedTranslation, 0f); 
+                clampedTranslation = Math.max(clampedTranslation, -currentKeypadHeight);
 
                 v.setTranslationY(clampedTranslation);
                 lastY = event.getRawY();
