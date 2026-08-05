@@ -25,6 +25,7 @@ import android.view.GestureDetector;
 import android.view.InputDevice;
 import android.view.KeyEvent;
 import android.view.MotionEvent;
+import android.view.ScaleGestureDetector;
 import android.view.View;
 import android.view.ViewConfiguration;
 
@@ -89,6 +90,26 @@ public class TouchInputHandler {
     /** Used to disambiguate a 2-finger gesture as a swipe or a pinch. */
     private final SwipeDetector mSwipePinchDetector;
 
+    /** Turns a 2-finger pinch into a renderer zoom level. Null on the touchpad handler. */
+    private final ScaleGestureDetector mScaleDetector;
+
+    /**
+     * The zoom a pinch has accumulated, kept as a float so that a slow pinch is not lost to the
+     * rounding of the integer percent the renderer takes.
+     */
+    private float mZoomAccumulator = LorieView.ZOOM_MIN;
+
+    /** The zoom the current pinch started from, to tell pinching in from pinching out. */
+    private float mZoomAtPinchStart = LorieView.ZOOM_MIN;
+
+    /** Set while a pinch owns the 2-finger gesture, so it does not also scroll. */
+    private boolean mInPinch;
+
+    /** Live pointer count, because {@link ScaleGestureDetector} does not report one. */
+    private int mPointerCount;
+
+    private boolean pinchZoomEnabled = false;
+
     private InputStrategyInterface mInputStrategy;
     private final InputEventSender mInjector;
     private final MainActivity mActivity;
@@ -117,6 +138,9 @@ public class TouchInputHandler {
      * initialized using the Context passed into the constructor.
      */
     private final float mSwipeThreshold;
+
+    /** Span change, in pixels, a pinch has to cover before it claims the gesture from a scroll. */
+    private final float mPinchThreshold;
 
     /**
      * Set to true to prevent any further movement of the cursor, for example, when showing the
@@ -201,6 +225,16 @@ public class TouchInputHandler {
         // that intentional swipes are usually detected.
         float density = /*desktop*/ activity.getResources().getDisplayMetrics().density;
         mSwipeThreshold = 40 * density;
+        mPinchThreshold = 8 * density;
+
+        // A pinch is only ever a touchscreen gesture, and quick-scale would claim the single-finger
+        // double-tap the drag gesture is built on.
+        if (isTouchpad)
+            mScaleDetector = null;
+        else {
+            mScaleDetector = new ScaleGestureDetector(/*desktop*/ activity, new ScaleListener());
+            mScaleDetector.setQuickScaleEnabled(false);
+        }
 
 //        mEdgeSlopInPx = ViewConfiguration.get(/*desktop*/ ctx).getScaledEdgeSlop();
 
@@ -338,6 +372,10 @@ public class TouchInputHandler {
             mScroller.onTouchEvent(event);
             mTapDetector.onTouchEvent(event);
             mSwipePinchDetector.onTouchEvent(event);
+            // After the swipe/pinch detector, whose verdict the scale listener consults.
+            mPointerCount = event.getPointerCount();
+            if (mScaleDetector != null && pinchZoomEnabled)
+                mScaleDetector.onTouchEvent(event);
 
             // For hardware touchpad in DeX (captured mode), handle physical click buttons
             if ((event.getSource() & InputDevice.SOURCE_TOUCHPAD) == InputDevice.SOURCE_TOUCHPAD) {
@@ -352,6 +390,7 @@ public class TouchInputHandler {
                     mSuppressCursorMovement = false;
                     mSwipeCompleted = false;
                     mIsDragging = false;
+                    mInPinch = false;
                     break;
 
                 case MotionEvent.ACTION_SCROLL:
@@ -475,6 +514,7 @@ public class TouchInputHandler {
         mediaKeysAction = extractUserActionFromPreferences(p, "mediaKeys");
 
         ignoreGamepadEvents = p.ignoreGamepadEvents.get();
+        pinchZoomEnabled = p.pinchZoom.get();
 
         if(mTouchpadHandler != null)
             mTouchpadHandler.reloadPreferences(p);
@@ -591,6 +631,58 @@ public class TouchInputHandler {
         return true;
     }
 
+    /** Turns a 2-finger pinch into an absolute renderer zoom level. */
+    private class ScaleListener extends ScaleGestureDetector.SimpleOnScaleGestureListener {
+        @Override
+        public boolean onScaleBegin(ScaleGestureDetector detector) {
+            // A 2-finger swipe is the scroll wheel, and it wins because it was recognised first.
+            if (mPointerCount != 2 || mSwipePinchDetector.isSwiping())
+                return false;
+
+            // The extra key bar drives the same zoom, so the accumulator is re-seeded rather than
+            // carried over from the previous pinch.
+            mZoomAccumulator = mActivity.getLorieView().getRendererZoomPercent();
+            mZoomAtPinchStart = mZoomAccumulator;
+            return true;
+        }
+
+        @Override
+        public boolean onScale(ScaleGestureDetector detector) {
+            // The swipe detector keeps reconsidering its verdict, so once the pinch owns the gesture
+            // it keeps it - otherwise a late swipe verdict would leave neither handler driving it.
+            if (!mInPinch && mSwipePinchDetector.isSwiping())
+                return false;
+
+            // Until the fingers have moved far enough the gesture is left to the other detectors,
+            // so that a 2-finger tap or a slightly uneven swipe does not nudge the zoom.
+            if (!mInPinch) {
+                if (Math.abs(detector.getCurrentSpan() - detector.getPreviousSpan()) < mPinchThreshold)
+                    return false;
+                mInPinch = true;
+            }
+
+            mZoomAccumulator = MathUtils.clamp(mZoomAccumulator * detector.getScaleFactor(),
+                    LorieView.ZOOM_MIN, LorieView.ZOOM_MAX);
+            mActivity.getLorieView().setRendererZoomPercent(Math.round(mZoomAccumulator));
+
+            // The fingers are not moving the cursor, and they must not fling it when they leave.
+            mSuppressCursorMovement = true;
+            return true;
+        }
+
+        @Override
+        public void onScaleEnd(ScaleGestureDetector detector) {
+            // Pinching back in almost all the way lands on exactly 1:1, the only zoom where the
+            // picture is drawn unscaled. Pinching out to a small zoom is left as the user set it.
+            if (mInPinch && mZoomAccumulator < mZoomAtPinchStart
+                    && mZoomAccumulator < LorieView.ZOOM_MIN + 10)
+                mActivity.getLorieView().resetRendererZoom();
+
+            // mInPinch is left set until the gesture ends, so the fingers still on screen after the
+            // pinch do not turn into a scroll on their way up. ACTION_DOWN clears it.
+        }
+    }
+
     /** Responds to touch events filtered by the gesture detectors.
      * @noinspection NullableProblems */
     private class GestureListener extends GestureDetector.SimpleOnGestureListener
@@ -640,7 +732,7 @@ public class TouchInputHandler {
                 return onSwipe();
             }
 
-            if (pointerCount == 2 && mSwipePinchDetector.isSwiping()) {
+            if (pointerCount == 2 && mSwipePinchDetector.isSwiping() && !mInPinch) {
                 if (!(mInputStrategy instanceof InputStrategyInterface.TrackpadInputStrategy)) {
                     // Ensure the cursor is located at the coordinates of the original event,
                     // otherwise the target window may not receive the scroll event correctly.

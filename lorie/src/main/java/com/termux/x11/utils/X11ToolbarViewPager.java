@@ -132,6 +132,7 @@ public class X11ToolbarViewPager {
                 final EditText editText = mTerminalToolbarViewPager.findViewById(R.id.terminal_toolbar_text_input);
                 if (editText != null) editText.requestFocus();
             }
+            act.onToolbarPageSelected(position);
         }
     }
 }

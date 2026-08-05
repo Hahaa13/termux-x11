@@ -51,7 +51,11 @@ import dalvik.annotation.optimization.FastNative;
 @Keep @SuppressLint("WrongConstant")
 @SuppressWarnings("deprecation")
 public class LorieView extends SurfaceView implements InputStub {
-    private static int rendererZoom = 100;
+    public static final int ZOOM_MIN = 100;
+    public static final int ZOOM_MAX = 400;
+    private static int rendererZoom = ZOOM_MIN;
+    /** Set while a floating window pins the drawn zoom to {@link #ZOOM_MIN} without forgetting it. */
+    private static boolean zoomSuppressed = false;
     private static final Rect NO_INSETS = new Rect();
 
     public interface Callback {
@@ -305,6 +309,12 @@ public class LorieView extends SurfaceView implements InputStub {
         clipboard = (ClipboardManager) getContext().getSystemService(Context.CLIPBOARD_SERVICE);
         nativeInit();
 
+        // A view outside a floating window draws at the full zoom again. The flag is process-wide
+        // like the zoom itself, so it has to be given up here rather than only on leaving PiP, which
+        // never happens when the floating window is dismissed outright.
+        zoomSuppressed = false;
+        setRendererZoom(rendererZoom);
+
         setFocusable(true);
         setFocusableInTouchMode(true);
 
@@ -487,7 +497,7 @@ public class LorieView extends SurfaceView implements InputStub {
 
         viewport.set(left, top, left + drawW, top + drawH);
         int hiddenBottom = Math.max(0, viewport.bottom - (availableTop + visibleH));
-        if ((rendererZoom == 100 && hiddenBottom == 0) || inputSourceWidth == 0.f || inputSourceHeight == 0.f) {
+        if ((getRendererZoomPercent() == ZOOM_MIN && hiddenBottom == 0) || inputSourceWidth == 0.f || inputSourceHeight == 0.f) {
             inputViewport.set(viewport);
             inputSourceLeft = inputSourceTop = 0.f;
             inputSourceWidth = p.x;
@@ -672,19 +682,30 @@ public class LorieView extends SurfaceView implements InputStub {
     @FastNative private static native void setRendererZoom(int percent);
 
     public void adjustRendererZoom(int delta) {
-        rendererZoom = MathUtils.clamp(rendererZoom + delta, 100, 400);
-        setRendererZoom(rendererZoom);
+        setRendererZoomPercent(rendererZoom + delta);
     }
 
     public void resetRendererZoom() {
-        rendererZoom = 100;
-        setRendererZoom(rendererZoom);
+        setRendererZoomPercent(ZOOM_MIN);
+    }
+
+    /** Sets an absolute zoom level, for gestures which are inherently multiplicative. */
+    public void setRendererZoomPercent(int percent) {
+        rendererZoom = MathUtils.clamp(percent, ZOOM_MIN, ZOOM_MAX);
+        if (!zoomSuppressed)
+            setRendererZoom(rendererZoom);
+    }
+
+    /** The zoom the picture is actually drawn at, which a floating window pins to {@link #ZOOM_MIN}. */
+    public int getRendererZoomPercent() {
+        return zoomSuppressed ? ZOOM_MIN : rendererZoom;
     }
 
     public void onPictureInPictureModeChanged(boolean isInPictureInPictureMode) {
         freezeDimensions(isInPictureInPictureMode);
         // Zooming a floating window makes no sense, but the zoom is restored along with the size.
-        setRendererZoom(isInPictureInPictureMode ? 100 : rendererZoom);
+        zoomSuppressed = isInPictureInPictureMode;
+        setRendererZoom(isInPictureInPictureMode ? ZOOM_MIN : rendererZoom);
     }
 
     @FastNative public native void sendMouseEvent(float x, float y, int whichButton, boolean buttonDown, boolean relative);

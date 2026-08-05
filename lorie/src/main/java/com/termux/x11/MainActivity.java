@@ -605,6 +605,10 @@ public class MainActivity extends AppCompatActivity {
         mInputHandler.reloadPreferences(prefs);
         lorieView.reloadPreferences(prefs);
 
+        // Giving up the linking hands the row straight back to its own preference.
+        if (ekShownForIme && !prefs.linkEKBarToIME.get())
+            ekShownForIme = false;
+
         setTerminalToolbarView();
 
         lorieView.triggerCallback();
@@ -668,7 +672,7 @@ public class MainActivity extends AppCompatActivity {
         final ViewPager pager = getTerminalToolbarViewPager();
         ViewGroup parent = (ViewGroup) pager.getParent();
 
-        boolean showNow = !isInPictureInPictureMode && LorieView.connected() && prefs.showAdditionalKbd.get() && prefs.additionalKbdVisible.get();
+        boolean showNow = extraKeysShown();
 
         pager.setVisibility(showNow ? View.VISIBLE : View.INVISIBLE);
 
@@ -696,6 +700,9 @@ public class MainActivity extends AppCompatActivity {
 
     private int ekbarContentInset = 0;
     private int imeHeight = 0;
+    private boolean imeVisible = false;
+    /** Set while the row is only shown because the soft keyboard is, which is not persisted. */
+    private boolean ekShownForIme = false;
     private int captionHeight = 0;
 
     private void applyContentInsets() {
@@ -712,8 +719,59 @@ public class MainActivity extends AppCompatActivity {
     }
 
     public void setImeHeight(int height) {
+        // The height is derived from two different measurements depending on the API level, so a
+        // small residual is not a keyboard. Anything shorter than a key row is treated as gone.
+        int threshold = Math.round(48 * getResources().getDisplayMetrics().density);
+        boolean nowVisible = height > threshold;
+
         imeHeight = height;
+
+        // The reported height drops to zero when the window loses focus, in Samsung DeX and in
+        // picture-in-picture, none of which mean the user put the keyboard away. Those are ignored
+        // rather than consumed, so imeVisible still describes the keyboard when focus comes back.
+        if (nowVisible != imeVisible && (nowVisible || hasWindowFocus())) {
+            imeVisible = nowVisible;
+            // Shows or hides the row before the insets are applied, so the extra keys inset and the
+            // keyboard height reach LorieView together in a single viewport update.
+            updateExtraKeysForIme();
+        }
+
         applyContentInsets();
+    }
+
+    /**
+     * Shows the extra keys row along with the soft keyboard and hides it again with it, when the
+     * user asked the two to be linked. The row's own preference is left alone, so turning the
+     * linking off again restores whatever the user had chosen for it.
+     */
+    private void updateExtraKeysForIme() {
+        boolean show = imeVisible && prefs.linkEKBarToIME.get();
+        if (ekShownForIme == show)
+            return;
+
+        ekShownForIme = show;
+
+        // The text input page of the toolbar is an IME client itself, so the keyboard belongs to the
+        // row rather than to the picture, and the row is left alone until that page is left again.
+        if (!show && getTerminalToolbarViewPager().getCurrentItem() != 0)
+            return;
+
+        // Rebuilding the row resets it to its first page and takes the focus back, so it is only
+        // rebuilt when this actually changes whether the row is on screen.
+        if (extraKeysShown() != (getTerminalToolbarViewPager().getVisibility() == View.VISIBLE))
+            setTerminalToolbarView();
+    }
+
+    /** Applies an extra keys row visibility the text input page of the toolbar was holding off. */
+    public void onToolbarPageSelected(int position) {
+        if (position == 0 && extraKeysShown() != (getTerminalToolbarViewPager().getVisibility() == View.VISIBLE))
+            setTerminalToolbarView();
+    }
+
+    /** Whether the extra keys row should currently be on screen. */
+    private boolean extraKeysShown() {
+        return !isInPictureInPictureMode && LorieView.connected() && prefs.showAdditionalKbd.get()
+                && (prefs.additionalKbdVisible.get() || ekShownForIme);
     }
 
     // The window header of desktop windowing can not be hidden, so its space has to be given up even
@@ -726,8 +784,12 @@ public class MainActivity extends AppCompatActivity {
     public void toggleExtraKeys(boolean visible, boolean saveState) {
         boolean enabled = prefs.showAdditionalKbd.get();
 
-        if (enabled && LorieView.connected() && saveState)
+        if (enabled && LorieView.connected() && saveState) {
             prefs.additionalKbdVisible.put(visible);
+            // An explicit choice outranks the soft keyboard, which would otherwise keep the row
+            // pinned open until the keyboard closed.
+            ekShownForIme = false;
+        }
 
         setTerminalToolbarView();
     }
@@ -938,6 +1000,12 @@ public class MainActivity extends AppCompatActivity {
     public void onPictureInPictureModeChanged(boolean isInPictureInPictureMode, @NonNull Configuration newConfig) {
         this.isInPictureInPictureMode = isInPictureInPictureMode;
         getLorieView().onPictureInPictureModeChanged(isInPictureInPictureMode);
+        // The floating window has no keyboard, and the reported height is forced to zero there
+        // without the window being focused, so the transition would not be seen otherwise.
+        if (isInPictureInPictureMode) {
+            imeVisible = false;
+            ekShownForIme = false;
+        }
         final ViewPager pager = getTerminalToolbarViewPager();
         pager.setAlpha(isInPictureInPictureMode ? 0.f : ((float) prefs.opacityEKBar.get())/100);
         findViewById(R.id.mouse_buttons).setAlpha(isInPictureInPictureMode ? 0.f : 0.7f);
